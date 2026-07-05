@@ -21,6 +21,9 @@ interface RecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(record: RecordEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(records: List<RecordEntity>)
+
     @Update
     suspend fun update(record: RecordEntity)
 

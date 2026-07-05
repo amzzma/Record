@@ -28,6 +28,10 @@ interface TreeNodeDao {
     @Query("SELECT * FROM tree_nodes WHERE notebookId = :notebookId ORDER BY sortOrder")
     fun getAllNodesByNotebook(notebookId: Long): Flow<List<TreeNodeEntity>>
 
+    /** 一次性获取记录本的所有 TreeNode（用于导出） */
+    @Query("SELECT * FROM tree_nodes WHERE notebookId = :notebookId ORDER BY sortOrder")
+    suspend fun getAllNodesByNotebookOnce(notebookId: Long): List<TreeNodeEntity>
+
     /** 获取单个节点 */
     @Query("SELECT * FROM tree_nodes WHERE id = :id")
     suspend fun getNodeById(id: Long): TreeNodeEntity?

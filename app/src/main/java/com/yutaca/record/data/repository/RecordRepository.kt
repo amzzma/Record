@@ -33,6 +33,21 @@ class RecordRepository(
         return recordDao.insert(record)
     }
 
+    suspend fun createRecordWithTimestamps(
+        title: String,
+        content: String,
+        createdAt: Long,
+        updatedAt: Long
+    ): Long {
+        val record = RecordEntity(
+            title = title,
+            content = content,
+            createdAt = createdAt,
+            updatedAt = updatedAt
+        )
+        return recordDao.insert(record)
+    }
+
     suspend fun saveRecord(record: RecordEntity) {
         recordDao.update(record.copy(version = record.version + 1))
     }
@@ -55,6 +70,10 @@ class RecordRepository(
         return attachmentDao.getById(id)
     }
 
+    suspend fun getAttachmentsByRecordIdOnce(recordId: Long): List<AttachmentEntity> {
+        return attachmentDao.getAttachmentsByRecordIdOnce(recordId)
+    }
+
     suspend fun addAttachment(attachment: AttachmentEntity): Long {
         return attachmentDao.insert(attachment)
     }
@@ -71,6 +90,10 @@ class RecordRepository(
 
     suspend fun getMetaDataById(id: Long): CustomMetaDataEntity? {
         return customMetaDataDao.getById(id)
+    }
+
+    suspend fun getMetaDataByRecordIdOnce(recordId: Long): List<CustomMetaDataEntity> {
+        return customMetaDataDao.getMetaDataByRecordIdOnce(recordId)
     }
 
     suspend fun addMetaData(metaData: CustomMetaDataEntity): Long {
@@ -95,11 +118,16 @@ class RecordRepository(
         return modificationHistoryDao.getHistoryByRecordId(recordId)
     }
 
-    suspend fun addModificationHistory(recordId: Long, message: String) {
+    suspend fun getModificationHistoryByRecordIdOnce(recordId: Long): List<ModificationHistoryEntity> {
+        return modificationHistoryDao.getHistoryByRecordIdOnce(recordId)
+    }
+
+    suspend fun addModificationHistory(recordId: Long, message: String, timestamp: Long = System.currentTimeMillis()) {
         modificationHistoryDao.insert(
             ModificationHistoryEntity(
                 recordId = recordId,
-                message = message
+                message = message,
+                timestamp = timestamp
             )
         )
     }

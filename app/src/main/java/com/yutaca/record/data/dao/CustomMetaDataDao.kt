@@ -15,6 +15,9 @@ interface CustomMetaDataDao {
     @Query("SELECT * FROM custom_meta_data WHERE recordId = :recordId ORDER BY id")
     fun getMetaDataByRecordId(recordId: Long): Flow<List<CustomMetaDataEntity>>
 
+    @Query("SELECT * FROM custom_meta_data WHERE recordId = :recordId ORDER BY id")
+    suspend fun getMetaDataByRecordIdOnce(recordId: Long): List<CustomMetaDataEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(metaData: CustomMetaDataEntity): Long
 

@@ -103,6 +103,7 @@ private val LevelIndicatorColor = Color(0xFFB8D4B4)
 fun DirectoryScreen(
     onBack: () -> Unit,
     onRecordClick: (Long) -> Unit,
+    onExportClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DirectoryViewModel,
     notebookRepository: NotebookRepository
@@ -154,18 +155,18 @@ fun DirectoryScreen(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("设置") },
-                            onClick = {
-                                showMenu = false
-                                /* 设置 - 待实现 */
-                            }
-                        )
+//                        DropdownMenuItem(
+//                            text = { Text("设置") },
+//                            onClick = {
+//                                showMenu = false
+//                                /* 设置 - 待实现 */
+//                            }
+//                        )
                         DropdownMenuItem(
                             text = { Text("导出记录本") },
                             onClick = {
                                 showMenu = false
-                                /* 导出功能开发中... */
+                                onExportClick()
                             }
                         )
                     }

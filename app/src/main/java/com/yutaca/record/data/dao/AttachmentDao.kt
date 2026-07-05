@@ -14,6 +14,9 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE recordId = :recordId ORDER BY createdAt DESC")
     fun getAttachmentsByRecordId(recordId: Long): Flow<List<AttachmentEntity>>
 
+    @Query("SELECT * FROM attachments WHERE recordId = :recordId ORDER BY createdAt DESC")
+    suspend fun getAttachmentsByRecordIdOnce(recordId: Long): List<AttachmentEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(attachment: AttachmentEntity): Long
 

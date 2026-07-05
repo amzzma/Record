@@ -63,6 +63,9 @@ dependencies {
     // Coil (图片加载)
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // Gson (JSON 序列化/反序列化)
+    implementation("com.google.code.gson:gson:2.10.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

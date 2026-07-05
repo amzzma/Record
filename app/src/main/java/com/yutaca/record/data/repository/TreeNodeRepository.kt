@@ -22,6 +22,10 @@ class TreeNodeRepository(private val treeNodeDao: TreeNodeDao) {
         return treeNodeDao.getAllNodesByNotebook(notebookId)
     }
 
+    suspend fun getAllNodesByNotebookOnce(notebookId: Long): List<TreeNodeEntity> {
+        return treeNodeDao.getAllNodesByNotebookOnce(notebookId)
+    }
+
     suspend fun getNodeById(id: Long): TreeNodeEntity? {
         return treeNodeDao.getNodeById(id)
     }
@@ -49,6 +53,28 @@ class TreeNodeRepository(private val treeNodeDao: TreeNodeDao) {
             isLeaf = isLeaf,
             recordId = recordId,
             sortOrder = maxOrder + 1
+        )
+        return treeNodeDao.insert(node)
+    }
+
+    /**
+     * 创建节点时指定排序（用于导入场景，保留原始排序）
+     */
+    suspend fun createNode(
+        notebookId: Long,
+        parentId: Long?,
+        name: String,
+        isLeaf: Boolean,
+        recordId: Long? = null,
+        sortOrder: Int
+    ): Long {
+        val node = TreeNodeEntity(
+            notebookId = notebookId,
+            parentId = parentId,
+            name = name,
+            isLeaf = isLeaf,
+            recordId = recordId,
+            sortOrder = sortOrder
         )
         return treeNodeDao.insert(node)
     }

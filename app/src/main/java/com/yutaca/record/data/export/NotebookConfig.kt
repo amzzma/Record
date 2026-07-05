@@ -1,5 +1,8 @@
 package com.yutaca.record.data.export
 
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+
 /**
  * 记录本配置文件 — 用于导入/导出整个记录本的全部数据。
  *
@@ -19,7 +22,15 @@ data class NotebookConfig(
     val treeNodes: List<TreeNodeItem> = emptyList(),
     /** 关联的记录列表 */
     val records: List<RecordItem> = emptyList()
-)
+) {
+    companion object {
+        private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+
+        fun fromJson(json: String): NotebookConfig = gson.fromJson(json, NotebookConfig::class.java)
+    }
+
+    fun toJson(): String = gson.toJson(this)
+}
 
 // ───── Notebook ─────
 
@@ -27,7 +38,9 @@ data class NotebookItem(
     val name: String,
     val description: String = "",
     val coverColor: Long = 0xFFF5F5F5,
-    val coverImageUri: String = ""
+    val coverImageUri: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 )
 
 // ───── TreeNode ─────
@@ -52,6 +65,8 @@ data class RecordItem(
     val title: String,
     val content: String = "",
     val version: Int = 1,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
     /** 附件列表 */
     val attachments: List<AttachmentItem> = emptyList(),
     /** 自定义键值对元数据 */

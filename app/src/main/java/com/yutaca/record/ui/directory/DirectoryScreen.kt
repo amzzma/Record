@@ -837,12 +837,28 @@ private fun AboutTab(
     var showCoverMenu by remember { mutableStateOf(false) }
     var showCoverPreview by remember { mutableStateOf(false) }
 
-    // 文件选择器：选择图片后更新封面
+    // 文件选择器：选择图片后复制到内部存储（避免重启后 content:// URI 权限丢失），再更新封面
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            onUpdateCoverImage(it.toString())
+        uri?.let { contentUri ->
+            try {
+                val inputStream = context.contentResolver.openInputStream(contentUri)
+                if (inputStream != null) {
+                    val coverDir = java.io.File(context.filesDir, "cover_images")
+                    if (!coverDir.exists()) coverDir.mkdirs()
+                    val fileName = "cover_${System.currentTimeMillis()}_${contentUri.hashCode()}.jpg"
+                    val destFile = java.io.File(coverDir, fileName)
+                    inputStream.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    onUpdateCoverImage(destFile.toURI().toString())
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

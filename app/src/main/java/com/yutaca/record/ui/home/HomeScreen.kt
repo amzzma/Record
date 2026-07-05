@@ -18,11 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -60,6 +62,7 @@ import com.yutaca.record.data.entity.NotebookEntity
 fun HomeScreen(
     onNotebookClick: (Long) -> Unit,
     onSearchClick: () -> Unit = {},
+    onImportClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel
 ) {
@@ -71,8 +74,21 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = { /* 打开侧边栏 - 待实现 */ }) {
-                        Icon(Icons.Default.Menu, contentDescription = "菜单")
+                    var showMenu by remember { mutableStateOf(false) }
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "菜单")
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("导入") },
+                            onClick = {
+                                showMenu = false
+                                onImportClick()
+                            }
+                        )
                     }
                 },
                 title = { Text("记录集列表") },

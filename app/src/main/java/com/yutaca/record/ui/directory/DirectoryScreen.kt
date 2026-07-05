@@ -32,7 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
@@ -146,8 +146,28 @@ fun DirectoryScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = { /* 设置 - 待实现 */ }) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置")
+                    var showMenu by remember { mutableStateOf(false) }
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("设置") },
+                            onClick = {
+                                showMenu = false
+                                /* 设置 - 待实现 */
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("导出记录本") },
+                            onClick = {
+                                showMenu = false
+                                /* 导出功能开发中... */
+                            }
+                        )
                     }
                 }
             )

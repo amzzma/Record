@@ -63,6 +63,7 @@ fun RecordNavGraph(
                     navController.navigate(Routes.directory(notebookId))
                 },
                 onSearchClick = { navController.navigate(Routes.SEARCH) },
+                onImportClick = { /* 导入功能开发中... */ },
                 viewModel = homeViewModel
             )
         }

@@ -1,5 +1,7 @@
 package com.yutaca.record.ui.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +54,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -63,11 +66,18 @@ fun HomeScreen(
     onNotebookClick: (Long) -> Unit,
     onSearchClick: () -> Unit = {},
     onImportClick: () -> Unit = {},
+    onNotebookExport: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+
+    // 重命名对话框状态
+    var renameTarget by remember { mutableStateOf<NotebookEntity?>(null) }
+
+    // 删除确认对话框状态
+    var deleteTarget by remember { mutableStateOf<NotebookEntity?>(null) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -155,7 +165,10 @@ fun HomeScreen(
                     items(uiState.notebooks, key = { it.id }) { notebook ->
                         NotebookCard(
                             notebook = notebook,
-                            onClick = { onNotebookClick(notebook.id) }
+                            onClick = { onNotebookClick(notebook.id) },
+                            onRename = { renameTarget = notebook },
+                            onExport = { onNotebookExport(notebook.id) },
+                            onDelete = { deleteTarget = notebook }
                         )
                     }
 
@@ -180,67 +193,131 @@ fun HomeScreen(
             }
         )
     }
+
+    // 重命名对话框
+    renameTarget?.let { notebook ->
+        RenameNotebookDialog(
+            currentName = notebook.name,
+            onDismiss = { renameTarget = null },
+            onConfirm = { newName ->
+                viewModel.renameNotebook(notebook.id, newName)
+                renameTarget = null
+            }
+        )
+    }
+
+    // 删除确认对话框
+    deleteTarget?.let { notebook ->
+        DeleteNotebookDialog(
+            notebookName = notebook.name,
+            onDismiss = { deleteTarget = null },
+            onConfirm = {
+                viewModel.deleteNotebook(notebook.id)
+                deleteTarget = null
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NotebookCard(
     notebook: NotebookEntity,
     onClick: () -> Unit,
+    onRename: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
-        onClick = onClick,
         modifier = modifier
             .aspectRatio(9f / 16f)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showMenu = true }
+            ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        if (notebook.coverImageUri.isNotBlank()) {
-            AsyncImage(
-                model = notebook.coverImageUri,
-                contentDescription = notebook.name,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.Crop
-            )
-        } else {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Description,
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = notebook.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (notebook.description.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
+        Box {
+            if (notebook.coverImageUri.isNotBlank()) {
+                AsyncImage(
+                    model = notebook.coverImageUri,
+                    contentDescription = notebook.name,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = notebook.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            text = notebook.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            maxLines = 2,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (notebook.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = notebook.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
+            }
+
+            // 长按菜单
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                offset = DpOffset(4.dp, 0.dp)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("重命名") },
+                    onClick = {
+                        showMenu = false
+                        onRename()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("导出") },
+                    onClick = {
+                        showMenu = false
+                        onExport()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        showMenu = false
+                        onDelete()
+                    }
+                )
             }
         }
     }
@@ -318,6 +395,69 @@ fun CreateNotebookDialog(
                 enabled = name.isNotBlank()
             ) {
                 Text("创建")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+fun RenameNotebookDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重命名记录集") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("新名称") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("确认")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+fun DeleteNotebookDialog(
+    notebookName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("删除记录集") },
+        text = {
+            Text("确定要删除「$notebookName」吗？该记录集下的所有记录和附件将被永久删除。")
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm
+            ) {
+                Text("删除", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {

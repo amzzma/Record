@@ -38,4 +38,7 @@ interface CustomMetaDataDao {
 
     @Query("DELETE FROM custom_meta_data WHERE recordId = :recordId")
     suspend fun deleteByRecordId(recordId: Long)
+
+    @Query("DELETE FROM custom_meta_data WHERE recordId IN (:recordIds)")
+    suspend fun deleteByRecordIds(recordIds: List<Long>)
 }

@@ -20,4 +20,7 @@ interface ModificationHistoryDao {
 
     @Query("DELETE FROM modification_history WHERE recordId = :recordId")
     suspend fun deleteByRecordId(recordId: Long)
+
+    @Query("DELETE FROM modification_history WHERE recordId IN (:recordIds)")
+    suspend fun deleteByRecordIds(recordIds: List<Long>)
 }

@@ -74,7 +74,18 @@ class NotebookImporter(
                 description = config.notebook.description
             )
 
-            // 4. 稍后更新封面信息（如果存在）
+            // 4. 恢复原始创建/修改时间戳
+            val createdNotebook = notebookRepository.getNotebookById(notebookId)
+            if (createdNotebook != null) {
+                notebookRepository.updateNotebook(
+                    createdNotebook.copy(
+                        createdAt = config.notebook.createdAt,
+                        updatedAt = config.notebook.updatedAt
+                    )
+                )
+            }
+
+            // 5. 更新封面信息（如果存在）
             if (config.notebook.coverColor != 0xFFF5F5F5.toLong() || config.notebook.coverImageUri.isNotEmpty()) {
                 val notebook = notebookRepository.getNotebookById(notebookId)
                 if (notebook != null) {
@@ -105,8 +116,20 @@ class NotebookImporter(
                 }
             }
 
-            // 5b. 导入所有树节点（此时 recordRefId 已映射）
-            for (node in config.treeNodes) {
+            // 5b. 按层级排序，确保父节点先于子节点插入
+            val depthMap = mutableMapOf<String?, Int>().apply { put(null, -1) }
+            var changed = true
+            while (changed) {
+                changed = false
+                for (node in config.treeNodes) {
+                    if (node.refId in depthMap) continue
+                    val pd = depthMap[node.parentRefId]
+                    if (pd != null) { depthMap[node.refId] = pd + 1; changed = true }
+                }
+            }
+            val sortedNodes = config.treeNodes.sortedBy { depthMap[it.refId] }
+
+            for (node in sortedNodes) {
                 val newParentId = node.parentRefId?.let { oldRef -> nodeIdMap[oldRef] }
                 val newRecordId = if (node.isLeaf && node.recordRefId != null) {
                     recordIdMap[node.recordRefId]
@@ -180,9 +203,9 @@ class NotebookImporter(
             val fileBytes = attachBuffers[attachment.refId]
             if (fileBytes != null) {
                 // 将附件保存到应用缓存目录
-                val cacheDir = File(context.cacheDir, "imported_attachments")
-                cacheDir.mkdirs()
-                val destFile = File(cacheDir, "${UUID.randomUUID()}_${attachment.fileName}")
+                val attachDir = File(context.filesDir, "attachments")
+                attachDir.mkdirs()
+                val destFile = File(attachDir, "${UUID.randomUUID()}_${attachment.fileName}")
                 FileOutputStream(destFile).use { fos ->
                     fos.write(fileBytes)
                 }

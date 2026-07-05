@@ -4,8 +4,11 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -55,7 +58,16 @@ fun RecordNavGraph(
     val scope = rememberCoroutineScope()
 
     // 创建 Repository 实例（在 Activity 级别共享）
-    val notebookRepository = remember { NotebookRepository(database.notebookDao()) }
+    val notebookRepository = remember {
+        NotebookRepository(
+            notebookDao = database.notebookDao(),
+            treeNodeDao = database.treeNodeDao(),
+            recordDao = database.recordDao(),
+            attachmentDao = database.attachmentDao(),
+            customMetaDataDao = database.customMetaDataDao(),
+            modificationHistoryDao = database.modificationHistoryDao()
+        )
+    }
     val treeNodeRepository = remember { TreeNodeRepository(database.treeNodeDao()) }
     val recordRepository = remember { RecordRepository(database.recordDao(), database.attachmentDao(), database.customMetaDataDao(), database.modificationHistoryDao()) }
 
@@ -84,7 +96,6 @@ fun RecordNavGraph(
                     tempFile.delete()
                     result.onSuccess { notebookId ->
                         Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
-                        navController.navigate(Routes.directory(notebookId))
                     }.onFailure { e ->
                         Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_LONG).show()
                     }
@@ -103,6 +114,39 @@ fun RecordNavGraph(
         // 首页 - 记录集列表
         composable(Routes.HOME) {
             val homeViewModel: HomeViewModel = viewModel(factory = homeViewModelFactory)
+
+            // 首页导出记录集文件创建器
+            var pendingExportNotebookId by remember { mutableStateOf<Long?>(null) }
+
+            val homeExportLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+            ) { uri ->
+                val notebookId = pendingExportNotebookId
+                if (uri != null && notebookId != null) {
+                    scope.launch {
+                        try {
+                            val tempFile = File(context.cacheDir, "export_temp_${System.currentTimeMillis()}.recordbook")
+                            val result = notebookExporter.export(notebookId, tempFile)
+                            result.onSuccess {
+                                context.contentResolver.openOutputStream(uri)?.use { output ->
+                                    tempFile.inputStream().use { input ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                tempFile.delete()
+                                Toast.makeText(context, "导出成功", Toast.LENGTH_SHORT).show()
+                            }.onFailure { e ->
+                                tempFile.delete()
+                                Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "导出出错: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                pendingExportNotebookId = null
+            }
+
             HomeScreen(
                 onNotebookClick = { notebookId ->
                     navController.navigate(Routes.directory(notebookId))
@@ -110,6 +154,14 @@ fun RecordNavGraph(
                 onSearchClick = { navController.navigate(Routes.SEARCH) },
                 onImportClick = {
                     importLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+                },
+                onNotebookExport = { notebookId ->
+                    pendingExportNotebookId = notebookId
+                    scope.launch {
+                        val notebook = notebookRepository.getNotebookById(notebookId)
+                        val fileName = (notebook?.name?.takeIf { it.isNotBlank() } ?: "记录本") + ".recordbook"
+                        homeExportLauncher.launch(fileName)
+                    }
                 },
                 viewModel = homeViewModel
             )
@@ -185,7 +237,11 @@ fun RecordNavGraph(
             }
 
             DirectoryScreen(
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    }
+                },
                 onRecordClick = { recordId ->
                     navController.navigate(Routes.recordDetail(recordId))
                 },
@@ -204,7 +260,11 @@ fun RecordNavGraph(
         // 搜索页
         composable(Routes.SEARCH) {
             SearchScreen(
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    }
+                },
                 onRecordClick = { recordId ->
                     navController.navigate(Routes.recordDetail(recordId))
                 },
@@ -231,7 +291,11 @@ fun RecordNavGraph(
             val recordDetailViewModel: RecordDetailViewModel = viewModel(factory = recordDetailViewModelFactory)
 
             RecordDetailScreen(
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    }
+                },
                 viewModel = recordDetailViewModel
             )
         }

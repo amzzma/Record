@@ -39,9 +39,16 @@ class HomeViewModel(
         }
     }
 
+    fun renameNotebook(id: Long, newName: String) {
+        viewModelScope.launch {
+            val notebook = notebookRepository.getNotebookById(id) ?: return@launch
+            notebookRepository.updateNotebook(notebook.copy(name = newName))
+        }
+    }
+
     fun deleteNotebook(id: Long) {
         viewModelScope.launch {
-            notebookRepository.deleteNotebook(id)
+            notebookRepository.deleteNotebookCascade(id)
         }
     }
 

@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import com.yutaca.record.data.entity.AttachmentEntity
 import com.yutaca.record.data.entity.CustomMetaDataEntity
 import com.yutaca.record.data.entity.ModificationHistoryEntity
@@ -270,14 +271,23 @@ fun RecordDetailScreen(
 
                 // 3. 附件管理
                 item {
-                    val openFile: (AttachmentEntity) -> Unit = { attachment ->
-                        val uri = Uri.parse(attachment.fileUri)
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, attachment.fileType)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "打开方式"))
+                val openFile: (AttachmentEntity) -> Unit = { attachment ->
+                    val uri = Uri.parse(attachment.fileUri)
+                    val contentUri = if (uri.scheme == "file") {
+                        FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            java.io.File(uri.path!!)
+                        )
+                    } else {
+                        uri
                     }
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(contentUri, attachment.fileType)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "打开方式"))
+                }
                     AttachmentsPanel(
                         attachments = uiState.attachments,
                         isExpanded = showAttachments,

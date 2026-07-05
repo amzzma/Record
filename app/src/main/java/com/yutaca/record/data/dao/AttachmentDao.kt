@@ -31,4 +31,7 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE recordId = :recordId")
     suspend fun deleteByRecordId(recordId: Long)
+
+    @Query("DELETE FROM attachments WHERE recordId IN (:recordIds)")
+    suspend fun deleteByRecordIds(recordIds: List<Long>)
 }

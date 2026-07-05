@@ -49,21 +49,21 @@ class NotebookExporter(
             val configTreeNodes = mutableListOf<TreeNodeItem>()
             val configRecords = mutableListOf<RecordItem>()
 
-            // 先用 UUID 代替所有引用
+            // 第 1 遍：所有节点先分配 refId，确保父节点一定在 Map 中
             for (node in treeNodes) {
-                val nodeRef = UUID.randomUUID().toString()
-                nodeRefMap[node.id] = nodeRef
-
-                // 如果 node 有关联的 record，也分配 UUID
+                nodeRefMap[node.id] = UUID.randomUUID().toString()
                 if (node.isLeaf && node.recordId != null) {
                     if (node.recordId !in recordRefMap) {
                         recordRefMap[node.recordId] = UUID.randomUUID().toString()
                     }
                 }
+            }
 
+            // 第 2 遍：构建 TreeNodeItem（parentRefId 一定可解析）
+            for (node in treeNodes) {
                 configTreeNodes.add(
                     TreeNodeItem(
-                        refId = nodeRef,
+                        refId = nodeRefMap[node.id]!!,
                         parentRefId = node.parentId?.let { nodeRefMap[it] },
                         name = node.name,
                         isLeaf = node.isLeaf,

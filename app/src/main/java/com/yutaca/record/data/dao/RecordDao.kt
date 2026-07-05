@@ -32,4 +32,10 @@ interface RecordDao {
 
     @Delete
     suspend fun delete(record: RecordEntity)
+
+    @Query("DELETE FROM records WHERE id IN (:recordIds)")
+    suspend fun deleteByIds(recordIds: List<Long>)
+
+    @Query("DELETE FROM records WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.yutaca.record.data.entity.AttachmentEntity
 import com.yutaca.record.data.entity.CustomMetaDataEntity
 import com.yutaca.record.data.entity.ModificationHistoryEntity
+import com.yutaca.record.data.repository.NotebookRepository
 import com.yutaca.record.data.repository.RecordRepository
 import com.yutaca.record.data.repository.TreeNodeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,8 @@ data class RecordDetailUiState(
 class RecordDetailViewModel(
     private val recordId: Long,
     private val recordRepository: RecordRepository,
-    private val treeNodeRepository: TreeNodeRepository
+    private val treeNodeRepository: TreeNodeRepository,
+    private val notebookRepository: NotebookRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RecordDetailUiState())
@@ -84,6 +86,7 @@ class RecordDetailViewModel(
             val current = recordRepository.getRecordByIdOnce(recordId) ?: return@launch
             recordRepository.saveRecord(current.copy(content = content, updatedAt = System.currentTimeMillis()))
             recordRepository.addModificationHistory(recordId, "修改内容")
+            updateNotebookTimestamp()
         }
     }
 
@@ -99,6 +102,7 @@ class RecordDetailViewModel(
                 treeNodeRepository.updateNodeName(treeNode.id, title)
             }
             recordRepository.addModificationHistory(recordId, "修改标题：$oldTitle → $title")
+            updateNotebookTimestamp()
         }
     }
 
@@ -113,6 +117,7 @@ class RecordDetailViewModel(
                 )
             )
             recordRepository.addModificationHistory(recordId, "添加附件：$fileName")
+            updateNotebookTimestamp()
         }
     }
 
@@ -125,6 +130,7 @@ class RecordDetailViewModel(
             if (attachment != null) {
                 recordRepository.addModificationHistory(recordId, "删除附件：$fileName")
             }
+            updateNotebookTimestamp()
         }
     }
 
@@ -138,6 +144,7 @@ class RecordDetailViewModel(
                 )
             )
             recordRepository.addModificationHistory(recordId, "添加元数据：$key = $value")
+            updateNotebookTimestamp()
         }
     }
 
@@ -155,6 +162,7 @@ class RecordDetailViewModel(
                 )
             )
             recordRepository.addModificationHistory(recordId, "修改元数据：$oldInfo → $key = $value")
+            updateNotebookTimestamp()
         }
     }
 
@@ -165,17 +173,25 @@ class RecordDetailViewModel(
             val info = if (meta != null) "${meta.key} = ${meta.value}" else "未知"
             recordRepository.deleteMetaData(metaDataId)
             recordRepository.addModificationHistory(recordId, "删除元数据：$info")
+            updateNotebookTimestamp()
         }
+    }
+
+    private suspend fun updateNotebookTimestamp() {
+        val treeNode = treeNodeRepository.getNodeByRecordId(recordId) ?: return
+        val notebook = notebookRepository.getNotebookById(treeNode.notebookId) ?: return
+        notebookRepository.updateNotebook(notebook.copy(updatedAt = System.currentTimeMillis()))
     }
 
     class Factory(
         private val recordId: Long,
         private val recordRepository: RecordRepository,
-        private val treeNodeRepository: TreeNodeRepository
+        private val treeNodeRepository: TreeNodeRepository,
+        private val notebookRepository: NotebookRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return RecordDetailViewModel(recordId, recordRepository, treeNodeRepository) as T
+            return RecordDetailViewModel(recordId, recordRepository, treeNodeRepository, notebookRepository) as T
         }
     }
 }

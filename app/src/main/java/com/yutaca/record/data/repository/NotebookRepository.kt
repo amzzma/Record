@@ -12,6 +12,10 @@ class NotebookRepository(private val notebookDao: NotebookDao) {
         return notebookDao.getNotebookById(id)
     }
 
+    fun getNotebookByIdFlow(id: Long): Flow<NotebookEntity?> {
+        return notebookDao.getNotebookByIdFlow(id)
+    }
+
     suspend fun createNotebook(name: String, description: String = ""): Long {
         val notebook = NotebookEntity(
             name = name,

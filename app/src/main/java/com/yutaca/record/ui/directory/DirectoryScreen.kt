@@ -1159,20 +1159,82 @@ private fun MoveDialog(
         }
     }
 
-    // 一级章节：显示序号选择器（直接放到末尾或指定位置）
+    // 一级章节：显示位置选择器
     if (isChapter) {
+        // 获取当前所有一级章节列表（用于计算可选位置）
+        val allChapters = viewModel.getLevelOneChapters()
+        val currentIndex = allChapters.indexOfFirst { it.first == nodeId }
+
+        // 构建位置选项列表（排除当前位置）
+        val positionOptions = remember(allChapters, nodeId) {
+            allChapters.indices.filter { it != currentIndex }.map { index ->
+                index to "第 ${index + 1} 位"
+            }
+        }
+
+        var dropdownExpanded by remember { mutableStateOf(false) }
+        var selectedTargetIndex by remember { mutableStateOf<Int?>(null) }
+        var selectedTargetLabel by remember { mutableStateOf("") }
+
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("移动章节") },
+            title = { Text("移动章节: $nodeName") },
             text = {
-                Text("当前版本支持将一级章节移动到末尾。\n\n更精细的排序功能将在后续版本中添加。")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "选择目标位置：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = dropdownExpanded,
+                        onExpandedChange = { dropdownExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedTargetLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("目标位置") },
+                            placeholder = { Text("请选择") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false }
+                        ) {
+                            positionOptions.forEach { (index, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        selectedTargetIndex = index
+                                        selectedTargetLabel = label
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.moveNode(nodeId, null) // null = 移动到根节点末尾
-                    onDismiss()
-                }) {
-                    Text("移动到末尾")
+                TextButton(
+                    onClick = {
+                        selectedTargetIndex?.let { targetIndex ->
+                            viewModel.moveChapterToPosition(nodeId, targetIndex)
+                        }
+                        onDismiss()
+                    },
+                    enabled = selectedTargetIndex != null
+                ) {
+                    Text("移动")
                 }
             },
             dismissButton = {

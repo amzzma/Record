@@ -98,14 +98,15 @@ class DirectoryViewModel(
 
     private fun loadNotebook() {
         viewModelScope.launch {
-            val notebook = notebookRepository.getNotebookById(notebookId)
-            _uiState.value = _uiState.value.copy(
-                notebookTitle = notebook?.name ?: "",
-                aboutDescription = notebook?.description ?: "",
-                aboutCreatedAt = notebook?.createdAt ?: 0L,
-                aboutUpdatedAt = notebook?.updatedAt ?: 0L,
-                aboutCoverImageUri = notebook?.coverImageUri ?: ""
-            )
+            notebookRepository.getNotebookByIdFlow(notebookId).collect { notebook ->
+                _uiState.value = _uiState.value.copy(
+                    notebookTitle = notebook?.name ?: "",
+                    aboutDescription = notebook?.description ?: "",
+                    aboutCreatedAt = notebook?.createdAt ?: 0L,
+                    aboutUpdatedAt = notebook?.updatedAt ?: 0L,
+                    aboutCoverImageUri = notebook?.coverImageUri ?: ""
+                )
+            }
         }
     }
 
@@ -374,6 +375,7 @@ class DirectoryViewModel(
                     }
                 }
             }
+            updateNotebookTimestamp()
         }
     }
 
@@ -412,6 +414,7 @@ class DirectoryViewModel(
 
             // 3. 再删除树节点（级联删除 tree_nodes）
             treeNodeRepository.deleteNodeCascade(id)
+            updateNotebookTimestamp()
         }
     }
 
@@ -435,6 +438,7 @@ class DirectoryViewModel(
                     recordRepository.saveRecord(record.copy(title = newName))
                 }
             }
+            updateNotebookTimestamp()
         }
     }
 
@@ -463,7 +467,18 @@ class DirectoryViewModel(
         viewModelScope.launch {
             notebookRepository.updateCoverImage(notebookId, uri)
             _uiState.value = _uiState.value.copy(aboutCoverImageUri = uri)
+            updateNotebookTimestamp()
         }
+    }
+
+    // ==================== 更新 "最后修改" 时间 ====================
+
+    /**
+     * 当目录内容发生任何变更时调用，刷新 notebook.updatedAt 时间戳
+     */
+    private suspend fun updateNotebookTimestamp() {
+        val notebook = notebookRepository.getNotebookById(notebookId) ?: return
+        notebookRepository.updateNotebook(notebook.copy(updatedAt = System.currentTimeMillis()))
     }
 
     // ==================== 收藏/取消收藏 ====================
@@ -477,6 +492,7 @@ class DirectoryViewModel(
             val id = nodeId.toLongOrNull() ?: return@launch
             val node = treeNodeRepository.getNodeById(id) ?: return@launch
             treeNodeRepository.updateFavoriteStatus(id, !node.isFavorite)
+            updateNotebookTimestamp()
         }
     }
 
@@ -518,6 +534,33 @@ class DirectoryViewModel(
                     "移动记录：${node.name} → ${targetName}"
                 )
             }
+            updateNotebookTimestamp()
+        }
+    }
+
+    /**
+     * 移动一级章节到指定位置（同层级重排序，不改变 parentId）
+     *
+     * @param chapterId 要移动的一级章节 ID（treeNode id）
+     * @param targetIndex 目标位置索引（0-based），如 0=第一位
+     */
+    fun moveChapterToPosition(chapterId: String, targetIndex: Int) {
+        viewModelScope.launch {
+            val chapters = _uiState.value.chapters.toMutableList()
+            val currentIndex = chapters.indexOfFirst { it.id == chapterId }
+            if (currentIndex == -1) return@launch
+
+            // 从原位置移除，插入到目标位置
+            val chapter = chapters.removeAt(currentIndex)
+            val adjustedIndex = if (currentIndex < targetIndex) targetIndex - 1 else targetIndex
+            chapters.add(adjustedIndex.coerceIn(0, chapters.size), chapter)
+
+            // 重新赋 sortOrder 并批量更新到数据库
+            chapters.forEachIndexed { index, ch ->
+                val id = ch.id.toLongOrNull() ?: return@forEachIndexed
+                treeNodeRepository.reorderNode(id, index)
+            }
+            updateNotebookTimestamp()
         }
     }
 

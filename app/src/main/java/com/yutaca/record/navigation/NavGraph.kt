@@ -139,7 +139,8 @@ fun RecordNavGraph(
                 RecordDetailViewModel.Factory(
                     recordId = recordId,
                     recordRepository = recordRepository,
-                    treeNodeRepository = treeNodeRepository
+                    treeNodeRepository = treeNodeRepository,
+                    notebookRepository = notebookRepository
                 )
             }
             val recordDetailViewModel: RecordDetailViewModel = viewModel(factory = recordDetailViewModelFactory)

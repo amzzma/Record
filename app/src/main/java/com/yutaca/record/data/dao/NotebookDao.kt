@@ -18,6 +18,9 @@ interface NotebookDao {
     @Query("SELECT * FROM notebooks WHERE id = :id")
     suspend fun getNotebookById(id: Long): NotebookEntity?
 
+    @Query("SELECT * FROM notebooks WHERE id = :id")
+    fun getNotebookByIdFlow(id: Long): Flow<NotebookEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(notebook: NotebookEntity): Long
 

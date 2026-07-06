@@ -521,8 +521,8 @@ class DirectoryViewModel(
             if (currentIndex == -1) return@launch
 
             val chapterToMove = localChapters.removeAt(currentIndex)
-            val adjustedIndex = if (currentIndex < targetIndex) targetIndex - 1 else targetIndex
-            localChapters.add(adjustedIndex.coerceIn(0, localChapters.size), chapterToMove)
+            val insertIndex = targetIndex.coerceIn(0, localChapters.size)
+            localChapters.add(insertIndex, chapterToMove)
 
             localChapters.forEachIndexed { idx, ch ->
                 val nodeId = ch.id.toLongOrNull() ?: return@forEachIndexed
@@ -531,6 +531,93 @@ class DirectoryViewModel(
             // Room Flow 会自动通知 UI
             debounceUpdateNotebookTimestamp()
         }
+    }
+
+    /**
+     * 通用方法：在同一父节点下将节点移动到指定排序位置
+     * 适用于任意层级的节点（一级章节、二级文件夹、二级叶子、三级记录）
+     *
+     * @param nodeId 要移动的节点 ID
+     * @param targetIndex 目标位置索引（0-based，相对于同级兄弟节点列表）
+     */
+    fun moveNodeToPosition(nodeId: String, targetIndex: Int) {
+        viewModelScope.launch {
+            val id = nodeId.toLongOrNull() ?: return@launch
+
+            val node = treeNodeRepository.getNodeById(id) ?: return@launch
+
+            // 获取同父节点的所有兄弟节点（包括自身）
+            val siblings = if (node.parentId == null) {
+                treeNodeRepository.getAllNodesByNotebookOnce(notebookId)
+                    .filter { it.parentId == null }
+                    .sortedBy { it.sortOrder }
+            } else {
+                treeNodeRepository.getChildNodesOnce(node.parentId)
+                    .sortedBy { it.sortOrder }
+            }
+
+            val mutableSiblings = siblings.toMutableList()
+            val currentIndex = mutableSiblings.indexOfFirst { it.id == id }
+            if (currentIndex == -1) return@launch
+
+            val nodeToMove = mutableSiblings.removeAt(currentIndex)
+            val insertIndex = targetIndex.coerceIn(0, mutableSiblings.size)
+            mutableSiblings.add(insertIndex, nodeToMove)
+
+            // 批量更新 sortOrder（仅更新有变化的节点以减少数据库写入）
+            mutableSiblings.forEachIndexed { idx, sibling ->
+                if (sibling.sortOrder != idx) {
+                    treeNodeRepository.reorderNode(sibling.id, idx)
+                }
+            }
+
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
+        }
+    }
+
+    /**
+     * 从当前 UI 树中获取某节点的同级兄弟节点列表
+     * 用于构建排序位置选择器的选项
+     *
+     * @param nodeId 目标节点 ID
+     * @return 兄弟节点的 Pair<nodeId, title> 列表
+     */
+    fun getSiblingNodesFromUiState(nodeId: String): List<Pair<String, String>> {
+        val chapters = uiState.value.chapters
+
+        // 1. 检查是否是一级章节
+        val l1Match = chapters.find { it.id == nodeId }
+        if (l1Match != null) {
+            return chapters.map { it.id to it.title }
+        }
+
+        // 2. 检查是否是二级节点（Folder 或 Leaf）
+        for (chapter in chapters) {
+            for (child in chapter.children) {
+                val childId = when (child) {
+                    is LevelTwoNode.Folder -> child.id
+                    is LevelTwoNode.Leaf -> child.treeNodeId
+                }
+                if (childId == nodeId) {
+                    return chapter.children.map {
+                        when (it) {
+                            is LevelTwoNode.Folder -> it.id to it.title
+                            is LevelTwoNode.Leaf -> it.treeNodeId to it.title
+                        }
+                    }
+                }
+                // 3. 检查是否是三级记录
+                if (child is LevelTwoNode.Folder) {
+                    val l3Match = child.records.find { it.id == nodeId || it.treeNodeId == nodeId }
+                    if (l3Match != null) {
+                        return child.records.map { it.id to it.title }
+                    }
+                }
+            }
+        }
+
+        return emptyList()
     }
 
     // ==================== 导航 ====================

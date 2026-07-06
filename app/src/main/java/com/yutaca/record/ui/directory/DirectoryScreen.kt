@@ -1284,7 +1284,29 @@ private fun MoveDialog(
         return
     }
 
-    // 文件夹或记录：选择目标父节点
+    // 文件夹或记录：可选择调整同级排序或移动到其他位置
+    // 操作模式切换：true=调整排序，false=移动到其他位置
+    var isSortMode by remember { mutableStateOf(false) }
+
+    // 获取同级兄弟节点列表（用于排序模式）
+    val siblingNodes: List<Pair<String, String>> = remember(nodeId, isSortMode) {
+        if (isSortMode) {
+            viewModel.getSiblingNodesFromUiState(nodeId)
+        } else {
+            emptyList()
+        }
+    }
+    val currentSiblingIndex = siblingNodes.indexOfFirst { it.first == nodeId }
+    val positionOptions = remember(siblingNodes, nodeId) {
+        siblingNodes.indices
+            .filter { it != currentSiblingIndex }
+            .map { index ->
+                index to "第 ${index + 1} 位"
+            }
+    }
+
+    var selectedPositionIndex by remember { mutableStateOf<Int?>(null) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1293,62 +1315,156 @@ private fun MoveDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "选择目标位置：",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = dropdownExpanded,
-                    onExpandedChange = { dropdownExpanded = it }
+                // 操作模式切换
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = selectedTargetLabel,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = {
-                            Text(
-                                if (isFolder) "目标一级章节"
-                                else "目标位置"
+                    TextButton(
+                        onClick = { isSortMode = false },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            "移动到...",
+                            color = if (!isSortMode) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            isSortMode = true
+                            selectedTargetId = null
+                            selectedTargetLabel = ""
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            "调整排序",
+                            color = if (isSortMode) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (isSortMode && siblingNodes.size >= 2) {
+                    // 排序模式：选择目标位置
+                    Text(
+                        text = "选择排序位置：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    if (positionOptions.isEmpty()) {
+                        Text(
+                            text = "当前只有一个同级节点，无法调整排序",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        ExposedDropdownMenuBox(
+                            expanded = dropdownExpanded,
+                            onExpandedChange = { dropdownExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedPositionIndex?.let { "第 ${it + 1} 位" } ?: "",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("目标位置") },
+                                placeholder = { Text("请选择") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                                },
+                                modifier = Modifier
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .fillMaxWidth()
                             )
-                        },
-                        placeholder = { Text("请选择") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
-                        },
+                            ExposedDropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false }
+                            ) {
+                                positionOptions.forEach { (index, label) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = {
+                                            selectedPositionIndex = index
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (!isSortMode) {
+                    // 移动模式：选择目标父节点
+                    Text(
+                        text = "选择目标位置：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = dropdownExpanded,
+                        onExpandedChange = { dropdownExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedTargetLabel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = {
+                                Text(
+                                    if (isFolder) "目标一级章节"
+                                    else "目标位置"
+                                )
+                            },
+                            placeholder = { Text("请选择") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                            },
                             modifier = Modifier
                                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false }
-                    ) {
-                        targetOptions.forEach { (id, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = {
-                                    selectedTargetId = id
-                                    selectedTargetLabel = label
-                                    dropdownExpanded = false
-                                }
-                            )
+                        )
+                        ExposedDropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false }
+                        ) {
+                            targetOptions.forEach { (id, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        selectedTargetId = id
+                                        selectedTargetLabel = label
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
+                } else {
+                    Text(
+                        text = "当前只有一个同级节点，无法调整排序",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    selectedTargetId?.let { targetId ->
-                        viewModel.moveNode(nodeId, targetId)
+                    if (isSortMode) {
+                        selectedPositionIndex?.let { index ->
+                            viewModel.moveNodeToPosition(nodeId, index)
+                        }
+                    } else {
+                        selectedTargetId?.let { targetId ->
+                            viewModel.moveNode(nodeId, targetId)
+                        }
                     }
                     onDismiss()
                 },
-                enabled = selectedTargetId != null
+                enabled = if (isSortMode) selectedPositionIndex != null && siblingNodes.size >= 2
+                         else selectedTargetId != null
             ) {
                 Text("移动")
             }
@@ -1365,14 +1481,15 @@ private fun MoveDialog(
  * 查找指定节点所属的一级章节 ID（用于文件夹移动时排除自身所在章节）
  */
 private fun findCurrentChapterId(nodeId: String, viewModel: DirectoryViewModel): String {
-    // 遍历所有一级章节，查找包含该文件夹的章节
-    val allChapters = viewModel.getLevelOneChapters()
-    for ((chapterId, _) in allChapters) {
-        // 通过 ViewModel 的 getLevelTwoFolders 检查该文件夹是否在该章节下
-        // 这里简单返回空字符串，让 getLevelOneChaptersForFolderMove 不做排除
-        // 用更精确的方法：从 ViewModel 已知结构查找
+    // 从 ViewModel 的 UI 状态中查找该文件夹所属的一级章节 ID
+    val chapters = viewModel.uiState.value.chapters
+    for (chapter in chapters) {
+        for (child in chapter.children) {
+            if (child is LevelTwoNode.Folder && child.id == nodeId) {
+                return chapter.id
+            }
+        }
     }
-    // 简化：返回空，表示不排除任何章节
     return ""
 }
 

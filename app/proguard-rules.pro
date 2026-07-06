@@ -1,0 +1,16 @@
+# ===== Gson 必备（保留所有数据类不被混淆） =====
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn sun.misc.Unsafe
+-keep class com.yutaca.record.model.** { *; }  # 将 model 换成你存放数据类的包名
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
+# ===== Room 必备（保留生成的代码） =====
+-keep class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.**
+
+# ===== Kotlin 协程必备 =====
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler

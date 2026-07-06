@@ -51,8 +51,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -177,7 +178,7 @@ fun DirectoryScreen(
         Column(modifier = Modifier.padding(innerPadding)) {
             // Tab 切换
             val tabs = listOf("章节", "关于")
-            TabRow(selectedTabIndex = uiState.selectedTabIndex) {
+            SecondaryTabRow(selectedTabIndex = uiState.selectedTabIndex) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
                         selected = uiState.selectedTabIndex == index,
@@ -1240,7 +1241,7 @@ private fun MoveDialog(
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
                             },
                             modifier = Modifier
-                                .menuAnchor()
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth()
                         )
                         ExposedDropdownMenu(
@@ -1317,9 +1318,9 @@ private fun MoveDialog(
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
                         },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
+                            modifier = Modifier
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
                     )
                     ExposedDropdownMenu(
                         expanded = dropdownExpanded,
@@ -1435,9 +1436,9 @@ private fun AddNodeDialog(
                         readOnly = true,
                         label = { Text("选择层级") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelDropdownExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
+                            modifier = Modifier
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                .fillMaxWidth()
                     )
                     ExposedDropdownMenu(
                         expanded = levelDropdownExpanded,
@@ -1476,7 +1477,7 @@ private fun AddNodeDialog(
                             },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = parentDropdownExpanded) },
                             modifier = Modifier
-                                .menuAnchor()
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth()
                         )
                         ExposedDropdownMenu(

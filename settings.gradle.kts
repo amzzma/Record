@@ -11,9 +11,8 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
+// Remove foojay-resolver-convention - it conflicts with Kotlin plugin in Gradle 9.x
+// The Gradle daemon JVM (JDK 21) is already configured in gradle-daemon-jvm.properties
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {

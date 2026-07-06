@@ -122,7 +122,7 @@ fun ProfileScreen(
             text = {
                 androidx.compose.foundation.layout.Column {
                     Text("应用名称：Record")
-                    Text("版本：1.0.0")
+                    Text("版本：0.0.1")
                 }
             },
             confirmButton = {

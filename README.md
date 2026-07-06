@@ -2,7 +2,11 @@
 
 <div align="center">
 
-一款基于 **Jetpack Compose** 构建的 Android 记录本应用，支持多层树形章节管理、富文本记录、附件管理、导入导出等功能。
+一款基于 **Jetpack Compose** + **Material 3** 构建的 Android 记录本应用，支持多层树形章节管理、富文本记录编辑、附件管理、导入导出、收藏与全文搜索等功能。
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+![Min SDK](https://img.shields.io/badge/minSdk-24-brightgreen)
+![Target SDK](https://img.shields.io/badge/targetSdk-36-brightgreen)
 
 </div>
 
@@ -16,6 +20,13 @@
 - 支持自定义描述文本
 - 可设置封面背景色
 - 首页网格视图展示所有记录集
+
+### 🧭 底部三 Tab 导航
+| Tab | 页面 | 说明 |
+|-----|------|------|
+| 🏠 首页 | 记录集列表 | 管理所有记录集，支持导入/导出 |
+| ⭐ 收藏 | 收藏列表 | 浏览已收藏的章节和记录 |
+| ⚙️ 更多 | 个人/设置 | 附加功能入口 |
 
 ### 🌲 三级树形结构
 | 层级 | 名称 | 说明 |
@@ -38,7 +49,7 @@
 - 完整的变更追溯
 
 ### 📎 附件管理
-- 支持附加任意类型的文件
+- 支持附加任意类型的文件（图片、文档等）
 - 支持查看已添加的附件列表
 - 支持通过文件选择器添加多个附件
 - 可打开/删除附件
@@ -47,15 +58,65 @@
 - 键值对形式扩展记录属性
 - 支持添加、编辑、删除
 
+### ⭐ 收藏
+- 在目录页中可收藏章节节点
+- 在收藏页集中浏览所有收藏项
+- 支持取消收藏
+
+### 🔍 全文搜索
+- 搜索记录的标题和正文内容
+- **关键词高亮**：搜索结果中标题和内容片段的关键词以特殊颜色高亮显示
+- **内容片段**：自动截取关键词附近上下文作为摘要
+- **搜索历史**：自动保存搜索记录，支持历史关键词点击快速搜索
+- 支持清空搜索历史
 
 ### ⬆️⬇️ 导入/导出
 - **导出格式**：`.recordbook`（标准 ZIP 包）
-  - 包含完整的记录集结构、所有记录内容、附件文件
+  - 包含完整的记录集结构、所有记录内容、附件文件、封面图片
   - 采用 JSON 配置 + 附件文件的打包方式
 - **导入**：支持从 `.recordbook` 文件恢复完整记录集
 
-### 🔍 搜索
-- 快速搜索记录集
+---
+
+## 使用指南
+
+### 1. 首页 — 记录集管理
+- 打开应用进入「记录集列表」页
+- 点击 **+** 或空状态下的加号按钮创建新记录集
+- 长按记录集卡片可重命名、导出、删除
+- 点击右上角菜单可导入 `.recordbook` 文件
+- 点击搜索图标进入全文搜索页
+
+### 2. 目录 — 章节组织
+- 进入记录集后默认显示「章节」列表
+- 点击 **添加章节或记录** 创建新节点
+- 选择层级：添加到一级章节 / 二级文件夹下
+- 节点操作：点击展开/折叠，长按显示上下文菜单（重命名、移动、删除、收藏）
+
+### 3. 记录 — 编辑与附件
+- 点击任意记录节点进入编辑页面
+- 编辑标题和正文内容，点击保存按钮（自动递增版本号）
+- 展开「附件」面板管理文件（添加、打开、删除）
+- 展开「自定义元数据」面板管理键值对
+- 查看「修改历史」了解变更记录
+
+### 4. ⭐ 收藏 — 集中浏览
+- 在目录页长按章节节点 → 收藏
+- 切换到底部导航「收藏」Tab 集中浏览所有收藏项
+- 点击收藏项跳转到对应章节或记录详情
+- 可取消收藏
+
+### 5. 🔍 搜索 — 全文检索
+- 从首页点击搜索图标进入搜索页
+- 输入关键字，搜索结果支持关键词高亮显示
+- 展示所属记录集名称和内容片段
+- 搜索历史自动保存，点击历史标签快速搜索
+- 可清空全部搜索历史
+
+### 6. 导出/导入
+- **导出**：目录页菜单 → 导出记录本，生成 `.recordbook` 文件
+- **导入**：首页菜单 → 导入，选择 `.recordbook` 文件还原
+
 ---
 
 ## 技术栈
@@ -68,8 +129,11 @@
 | 导航 | **Navigation Compose** |
 | 图片加载 | **Coil** |
 | 序列化 | **Gson** |
+| 依赖注入 | 手动构造（无 DI 框架） |
+| 数据持久化 | Room + SharedPreferences（搜索历史） |
 | 最低 SDK | **24**（Android 7.0） |
 | 目标 SDK | **36** |
+| 构建工具 | **Gradle 8.x** + **Kotlin DSL** |
 
 ---
 
@@ -77,15 +141,15 @@
 
 ```
 app/src/main/java/com/yutaca/record/
-├── MainActivity.kt                  # 主入口 Activity
+├── MainActivity.kt                  # 主入口 Activity + 底部导航
 ├── navigation/
-│   └── NavGraph.kt                  # 导航图定义
+│   └── NavGraph.kt                  # 导航图定义（5 条路由）
 ├── data/
 │   ├── database/
-│   │   └── AppDatabase.kt           # Room 数据库
+│   │   └── AppDatabase.kt           # Room 数据库（version 4）
 │   ├── entity/
 │   │   ├── NotebookEntity.kt        # 记录集
-│   │   ├── TreeNodeEntity.kt        # 树形节点
+│   │   ├── TreeNodeEntity.kt        # 树形节点（自引用外键）
 │   │   ├── RecordEntity.kt          # 记录
 │   │   ├── AttachmentEntity.kt      # 附件
 │   │   ├── CustomMetaDataEntity.kt  # 自定义元数据
@@ -98,22 +162,33 @@ app/src/main/java/com/yutaca/record/
 │   │   ├── CustomMetaDataDao.kt
 │   │   └── ModificationHistoryDao.kt
 │   ├── repository/
-│   │   ├── NotebookRepository.kt
-│   │   ├── TreeNodeRepository.kt
-│   │   └── RecordRepository.kt
+│   │   ├── NotebookRepository.kt    # 记录集 + 级联删除
+│   │   ├── TreeNodeRepository.kt    # 树节点操作
+│   │   └── RecordRepository.kt      # 记录 + 附件 + 元数据 + 历史
 │   └── export/
-│       ├── NotebookExporter.kt      # .recordbook 导出
-│       └── NotebookImporter.kt      # .recordbook 导入
+│       ├── NotebookExporter.kt      # .recordbook 导出（ZIP）
+│       └── NotebookImporter.kt      # .recordbook 导入解析
 └── ui/
     ├── home/
-    │   ├── HomeScreen.kt            # 首页 - 记录集列表
+    │   ├── HomeScreen.kt            # 首页 - 记录集网格
     │   └── HomeViewModel.kt
     ├── directory/
     │   ├── DirectoryScreen.kt       # 目录 - 树形章节管理
     │   └── DirectoryViewModel.kt
-    └── record/
-        ├── RecordDetailScreen.kt    # 记录详情 - 编辑/附件/历史
-        └── RecordDetailViewModel.kt
+    ├── record/
+    │   ├── RecordDetailScreen.kt    # 记录详情 - 编辑/附件/元数据/历史
+    │   └── RecordDetailViewModel.kt
+    ├── favorites/
+    │   ├── FavoritesScreen.kt       # 收藏页
+    │   └── FavoritesViewModel.kt
+    ├── profile/
+    │   └── ProfileScreen.kt         # 更多页
+    ├── search/
+    │   └── SearchScreen.kt          # 搜索页（历史 + 高亮）
+    └── theme/
+        ├── Theme.kt
+        ├── Color.kt
+        └── Type.kt
 ```
 
 ### 数据模型关系
@@ -164,42 +239,17 @@ git clone https://github.com/amzzma/Record.git
 
 ---
 
-## 使用指南
-
-### 1. 首页 — 记录集管理
-- 打开应用进入「记录集列表」页
-- 点击 **+** 或空状态下的加号按钮创建新记录集
-- 长按记录集卡片可重命名、导出、删除
-- 点击右上角菜单可导入 `.recordbook` 文件
-
-### 2. 目录 — 章节组织
-- 进入记录集后默认显示「章节」Tab
-- 点击 **添加章节或记录** 创建新节点
-- 选择层级：添加到一级章节 / 二级文件夹下
-- 节点操作：点击展开/折叠，长按显示上下文菜单
-
-### 3. 记录 — 编辑与附件
-- 点击任意记录节点进入编辑页面
-- 编辑标题和正文内容，点击保存按钮
-- 展开「附件」面板管理文件
-- 展开「自定义元数据」面板管理键值对
-- 查看「修改历史」了解变更记录
-
-### 4. 导出/导入
-- **导出**：目录页菜单 → 导出记录本，生成 `.recordbook` 文件
-- **导入**：首页菜单 → 导入，选择 `.recordbook` 文件还原
-
----
-
 ## 导出文件格式
 
 `.recordbook` 文件是一个标准 ZIP 包，内部结构如下：
 
 ```
-notebook.json          # 记录集元数据 + 树结构 + 所有记录
+notebook.json              # 记录集元数据 + 树结构 + 所有记录
 attachments/
   ├── {refId}_{filename}   # 附件文件
   └── ...
+cover_images/
+  └── {filename}           # 封面图片（可选）
 ```
 
 `notebook.json` 包含完整的结构信息，支持版本兼容（当前版本 `v1`）。
@@ -213,9 +263,10 @@ attachments/
 - UI 层采用 Compose 函数式组件
 - 数据层采用 Repository 模式
 - 使用 Flow + StateFlow 实现响应式数据流
+- 手动依赖注入，Repository 在 NavGraph 中创建并向下传递
 
 ### 数据库升级
-Room 数据库通过 `@Database` 注解的 `version` 管理迁移，详见 `AppDatabase.kt`。
+Room 数据库当前版本为 `v4`，使用 `fallbackToDestructiveMigration()` 策略（破坏性迁移）。如需保留数据，需实现自定义 `Migration` 对象。详见 `AppDatabase.kt`。
 
 ---
 
@@ -241,4 +292,6 @@ limitations under the License.
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request ~
+欢迎提交 Issue 和 Pull Request！
+
+在提交 Pull Request 之前，请先创建一个 Issue 说明你要解决的问题或新增的功能，以便进行讨论和确认方向。

@@ -168,6 +168,24 @@ class NotebookExporter(
                         // 如果附件文件无法读取，跳过该附件（不中断导出）
                     }
                 }
+
+                // 7c. 写入封面图片到 cover_images/ 目录
+                if (notebook.coverImageUri.isNotBlank()) {
+                    try {
+                        val coverUri = android.net.Uri.parse(notebook.coverImageUri)
+                        val inputStream = context.contentResolver.openInputStream(coverUri)
+                        if (inputStream != null) {
+                            val fileName = coverUri.lastPathSegment ?: "cover.jpg"
+                            zos.putNextEntry(ZipEntry("cover_images/$fileName"))
+                            BufferedInputStream(inputStream).use { bis ->
+                                bis.copyTo(zos, bufferSize = 8192)
+                            }
+                            zos.closeEntry()
+                        }
+                    } catch (_: Exception) {
+                        // 如果封面图片无法读取，跳过（不中断导出）
+                    }
+                }
             }
 
             Result.success(Unit)

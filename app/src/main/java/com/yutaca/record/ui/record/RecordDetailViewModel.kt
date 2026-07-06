@@ -9,6 +9,8 @@ import com.yutaca.record.data.entity.ModificationHistoryEntity
 import com.yutaca.record.data.repository.NotebookRepository
 import com.yutaca.record.data.repository.RecordRepository
 import com.yutaca.record.data.repository.TreeNodeRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,51 +36,97 @@ class RecordDetailViewModel(
     private val _uiState = MutableStateFlow(RecordDetailUiState())
     val uiState: StateFlow<RecordDetailUiState> = _uiState.asStateFlow()
 
+    /** 防抖时间戳写入任务，500ms 内多次操作合并为一次写入 */
+    private var timestampJob: Job? = null
+
     init {
         loadRecord()
-        loadAttachments()
-        loadMetaData()
-        loadModificationHistory()
+        // 附件/元数据/历史使用一次性查询，避免持久Flow订阅造成频繁推送
+        loadAttachmentsOnce()
+        loadMetaDataOnce()
+        loadModificationHistoryOnce()
     }
 
+    /**
+     * 一次性加载记录，避免持久 Flow 订阅导致每次 DB 变化都推送
+     */
     private fun loadRecord() {
         viewModelScope.launch {
-            recordRepository.getRecordById(recordId).collect { record ->
-                if (record != null) {
-                    _uiState.value = _uiState.value.copy(
-                        title = record.title,
-                        content = record.content,
-                        version = record.version
-                    )
-                }
+            val record = recordRepository.getRecordByIdOnce(recordId)
+            if (record != null) {
+                _uiState.value = _uiState.value.copy(
+                    title = record.title,
+                    content = record.content,
+                    version = record.version,
+                    isLoading = false
+                )
+            } else {
                 _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
     }
 
-    private fun loadAttachments() {
+    /**
+     * 手动刷新记录内容（写操作后需要回读时才调用）
+     */
+    private fun refreshRecord() {
         viewModelScope.launch {
-            recordRepository.getAttachmentsByRecordId(recordId).collect { attachments ->
-                _uiState.value = _uiState.value.copy(attachments = attachments)
-            }
+            val record = recordRepository.getRecordByIdOnce(recordId) ?: return@launch
+            _uiState.value = _uiState.value.copy(
+                title = record.title,
+                content = record.content,
+                version = record.version
+            )
         }
     }
 
-    private fun loadMetaData() {
+    // ==================== 一次性数据加载（仅在构造时调用） ====================
+
+    private fun loadAttachmentsOnce() {
         viewModelScope.launch {
-            recordRepository.getMetaDataByRecordId(recordId).collect { metaData ->
-                _uiState.value = _uiState.value.copy(metaData = metaData)
-            }
+            val attachments = recordRepository.getAttachmentsByRecordIdOnce(recordId)
+            _uiState.value = _uiState.value.copy(attachments = attachments)
         }
     }
 
-    private fun loadModificationHistory() {
+    private fun loadMetaDataOnce() {
         viewModelScope.launch {
-            recordRepository.getModificationHistoryByRecordId(recordId).collect { history ->
-                _uiState.value = _uiState.value.copy(modificationHistory = history)
-            }
+            val metaData = recordRepository.getMetaDataByRecordIdOnce(recordId)
+            _uiState.value = _uiState.value.copy(metaData = metaData)
         }
     }
+
+    private fun loadModificationHistoryOnce() {
+        viewModelScope.launch {
+            val history = recordRepository.getModificationHistoryByRecordIdOnce(recordId)
+            _uiState.value = _uiState.value.copy(modificationHistory = history)
+        }
+    }
+
+    // ==================== 手动刷新方法（在写操作后调用） ====================
+
+    private fun refreshAttachments() {
+        viewModelScope.launch {
+            val attachments = recordRepository.getAttachmentsByRecordIdOnce(recordId)
+            _uiState.value = _uiState.value.copy(attachments = attachments)
+        }
+    }
+
+    private fun refreshMetaData() {
+        viewModelScope.launch {
+            val metaData = recordRepository.getMetaDataByRecordIdOnce(recordId)
+            _uiState.value = _uiState.value.copy(metaData = metaData)
+        }
+    }
+
+    private fun refreshModificationHistory() {
+        viewModelScope.launch {
+            val history = recordRepository.getModificationHistoryByRecordIdOnce(recordId)
+            _uiState.value = _uiState.value.copy(modificationHistory = history)
+        }
+    }
+
+    // ==================== 业务方法 ====================
 
     fun saveContent(content: String) {
         _uiState.value = _uiState.value.copy(content = content)
@@ -86,7 +134,11 @@ class RecordDetailViewModel(
             val current = recordRepository.getRecordByIdOnce(recordId) ?: return@launch
             recordRepository.saveRecord(current.copy(content = content, updatedAt = System.currentTimeMillis()))
             recordRepository.addModificationHistory(recordId, "修改内容")
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            // 手动更新版本号，减少不必要的重组
+            _uiState.value = _uiState.value.copy(version = current.version + 1)
+            refreshModificationHistory()
         }
     }
 
@@ -102,7 +154,9 @@ class RecordDetailViewModel(
                 treeNodeRepository.updateNodeName(treeNode.id, title)
             }
             recordRepository.addModificationHistory(recordId, "修改标题：$oldTitle → $title")
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            refreshModificationHistory()
         }
     }
 
@@ -117,7 +171,10 @@ class RecordDetailViewModel(
                 )
             )
             recordRepository.addModificationHistory(recordId, "添加附件：$fileName")
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            refreshAttachments()
+            refreshModificationHistory()
         }
     }
 
@@ -130,7 +187,10 @@ class RecordDetailViewModel(
             if (attachment != null) {
                 recordRepository.addModificationHistory(recordId, "删除附件：$fileName")
             }
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            refreshAttachments()
+            refreshModificationHistory()
         }
     }
 
@@ -144,7 +204,10 @@ class RecordDetailViewModel(
                 )
             )
             recordRepository.addModificationHistory(recordId, "添加元数据：$key = $value")
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            refreshMetaData()
+            refreshModificationHistory()
         }
     }
 
@@ -162,7 +225,10 @@ class RecordDetailViewModel(
                 )
             )
             recordRepository.addModificationHistory(recordId, "修改元数据：$oldInfo → $key = $value")
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            refreshMetaData()
+            refreshModificationHistory()
         }
     }
 
@@ -173,14 +239,24 @@ class RecordDetailViewModel(
             val info = if (meta != null) "${meta.key} = ${meta.value}" else "未知"
             recordRepository.deleteMetaData(metaDataId)
             recordRepository.addModificationHistory(recordId, "删除元数据：$info")
-            updateNotebookTimestamp()
+            debounceUpdateNotebookTimestamp()
+
+            refreshMetaData()
+            refreshModificationHistory()
         }
     }
 
-    private suspend fun updateNotebookTimestamp() {
-        val treeNode = treeNodeRepository.getNodeByRecordId(recordId) ?: return
-        val notebook = notebookRepository.getNotebookById(treeNode.notebookId) ?: return
-        notebookRepository.updateNotebook(notebook.copy(updatedAt = System.currentTimeMillis()))
+    /**
+     * 防抖方式更新 notebook.updatedAt 时间戳，500ms 内多次操作合并为一次写入
+     */
+    private fun debounceUpdateNotebookTimestamp() {
+        timestampJob?.cancel()
+        timestampJob = viewModelScope.launch {
+            delay(500)
+            val treeNode = treeNodeRepository.getNodeByRecordId(recordId) ?: return@launch
+            val notebook = notebookRepository.getNotebookById(treeNode.notebookId) ?: return@launch
+            notebookRepository.updateNotebook(notebook.copy(updatedAt = System.currentTimeMillis()))
+        }
     }
 
     class Factory(

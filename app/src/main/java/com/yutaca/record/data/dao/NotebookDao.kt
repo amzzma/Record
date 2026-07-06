@@ -15,6 +15,9 @@ interface NotebookDao {
     @Query("SELECT * FROM notebooks ORDER BY updatedAt DESC")
     fun getAllNotebooks(): Flow<List<NotebookEntity>>
 
+    @Query("SELECT * FROM notebooks ORDER BY updatedAt DESC")
+    suspend fun getAllNotebooksOnce(): List<NotebookEntity>
+
     @Query("SELECT * FROM notebooks WHERE id = :id")
     suspend fun getNotebookById(id: Long): NotebookEntity?
 

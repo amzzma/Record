@@ -34,9 +34,11 @@ class NotebookImporter(
     suspend fun import(inputFile: File): Result<Long> = withContext(Dispatchers.IO) {
         try
         {
-            // 1. 读取 ZIP 中的 notebook.json + 收集附件
+            // 1. 读取 ZIP 中的 notebook.json + 收集附件 + 收集封面
             val json: String
             val attachBuffers = mutableMapOf<String, ByteArray>() // refId -> file bytes
+            var coverImageBytes: ByteArray? = null        // 封面图片原始数据
+            var coverImageFileName: String? = null        // 封面图片文件名
 
             ZipInputStream(inputFile.inputStream().buffered()).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
@@ -52,6 +54,10 @@ class NotebookImporter(
                         // 格式: attachments/{refId}_{fileName}
                         val refId = name.substringAfter("attachments/").substringBefore('_')
                         attachBuffers[refId] = zis.readBytes()
+                    } else if (name.startsWith("cover_images/")) {
+                        // 格式: cover_images/{fileName}
+                        coverImageBytes = zis.readBytes()
+                        coverImageFileName = name.substringAfter("cover_images/")
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
@@ -85,17 +91,30 @@ class NotebookImporter(
                 )
             }
 
-            // 5. 更新封面信息（如果存在）
-            if (config.notebook.coverColor != 0xFFF5F5F5.toLong() || config.notebook.coverImageUri.isNotEmpty()) {
-                val notebook = notebookRepository.getNotebookById(notebookId)
-                if (notebook != null) {
-                    notebookRepository.updateNotebook(
-                        notebook.copy(
-                            coverColor = config.notebook.coverColor,
-                            coverImageUri = config.notebook.coverImageUri
-                        )
+            // 5. 处理封面图片：优先从 ZIP 中恢复，其次保留原始 URI（旧版兼容）
+            val finalCoverImageUri: String
+            if (coverImageBytes != null) {
+                // ZIP 中有封面图片数据 → 恢复到内部存储
+                val coverDir = java.io.File(context.filesDir, "cover_images")
+                if (!coverDir.exists()) coverDir.mkdirs()
+                val fileName = coverImageFileName ?: "cover_${System.currentTimeMillis()}.jpg"
+                val destFile = java.io.File(coverDir, fileName)
+                destFile.outputStream().use { it.write(coverImageBytes) }
+                finalCoverImageUri = destFile.toURI().toString()
+            } else {
+                // 旧版 .recordbook，没有封面图片数据 → 置空（避免引用不存在的旧路径）
+                finalCoverImageUri = ""
+            }
+
+            // 更新封面信息
+            val notebook = notebookRepository.getNotebookById(notebookId)
+            if (notebook != null) {
+                notebookRepository.updateNotebook(
+                    notebook.copy(
+                        coverColor = config.notebook.coverColor,
+                        coverImageUri = finalCoverImageUri
                     )
-                }
+                )
             }
 
             // 5. 导入树节点 — 建立 oldRefId -> newId 映射

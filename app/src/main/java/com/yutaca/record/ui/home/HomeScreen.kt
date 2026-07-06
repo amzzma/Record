@@ -38,11 +38,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -70,7 +70,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
 
     // 重命名对话框状态
@@ -88,6 +88,7 @@ fun HomeScreen(
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "菜单")
                     }
+                    var showSortDialog by remember { mutableStateOf(false) }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
@@ -98,6 +99,23 @@ fun HomeScreen(
                                 showMenu = false
                                 onImportClick()
                             }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("排序") },
+                            onClick = {
+                                showMenu = false
+                                showSortDialog = true
+                            }
+                        )
+                    }
+                    if (showSortDialog) {
+                        SortModeDialog(
+                            current = uiState.sortMode,
+                            onSelect = { mode ->
+                                viewModel.setSortMode(mode)
+                                showSortDialog = false
+                            },
+                            onDismiss = { showSortDialog = false }
                         )
                     }
                 },
@@ -461,6 +479,41 @@ fun DeleteNotebookDialog(
             }
         },
         dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+fun SortModeDialog(
+    current: SortMode,
+    onSelect: (SortMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("记录集排序") },
+        text = {
+            Column {
+                SortMode.entries.forEach { mode ->
+                    val selected = mode == current
+                    TextButton(
+                        onClick = { onSelect(mode) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = mode.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("取消")
             }

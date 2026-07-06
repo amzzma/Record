@@ -7,12 +7,16 @@ import com.yutaca.record.data.entity.TreeNodeEntity
 import com.yutaca.record.data.repository.NotebookRepository
 import com.yutaca.record.data.repository.RecordRepository
 import com.yutaca.record.data.repository.TreeNodeRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 // ==================== 三级数据模型 ====================
@@ -71,8 +75,46 @@ class DirectoryViewModel(
     private val recordRepository: RecordRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(NotebookDirectoryUiState())
-    val uiState: StateFlow<NotebookDirectoryUiState> = _uiState.asStateFlow()
+    /** 当前选中的标签页 */
+    private val _selectedTabIndex = MutableStateFlow(0)
+
+    /** 展开/折叠状态存储（用 StateFlow 驱动，修改时自动触发重组） */
+    private val _expandedKeys = MutableStateFlow<Set<String>>(emptySet())
+
+    /** 防抖时间戳写入任务，500ms 内多次操作合并为一次写入 */
+    private var timestampJob: Job? = null
+
+    /**
+     * 使用 Room Flow 自动订阅笔记本信息和目录树变化。
+     * notebookRepository.getNotebookByIdFlow(notebookId) 和
+     * treeNodeRepository.getAllNodesByNotebook(notebookId) 都是 Room Flow，
+     * 当数据库中对应数据发生变化时自动通知。
+     * Room Flow 有内存缓存，重新订阅时立即发射上次结果，回到此页时无需等待数据库查询。
+     */
+    val uiState: StateFlow<NotebookDirectoryUiState> = combine(
+        notebookRepository.getNotebookByIdFlow(notebookId),
+        treeNodeRepository.getAllNodesByNotebook(notebookId),
+        _selectedTabIndex,
+        _expandedKeys
+    ) { notebook, allNodes, selectedTab, expandedKeys ->
+        val chapters = buildThreeLevelTree(allNodes, expandedKeys)
+        val leafCount = countAllLeafRecords(chapters)
+        NotebookDirectoryUiState(
+            notebookTitle = notebook?.name ?: "",
+            chapters = chapters,
+            selectedTabIndex = selectedTab,
+            isLoading = false,
+            aboutDescription = notebook?.description ?: "",
+            aboutCreatedAt = notebook?.createdAt ?: 0L,
+            aboutUpdatedAt = notebook?.updatedAt ?: 0L,
+            totalRecordCount = leafCount,
+            aboutCoverImageUri = notebook?.coverImageUri ?: ""
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = NotebookDirectoryUiState(isLoading = true)
+    )
 
     // 导航到记录详情
     private val _navigateToRecord = MutableSharedFlow<Long>(extraBufferCapacity = 1)
@@ -83,48 +125,6 @@ class DirectoryViewModel(
     val addNodeEvent: SharedFlow<Unit> = _addNodeEvent.asSharedFlow()
 
     /**
-     * 展开/折叠状态存储
-     * key 格式: "L1_${id}" 表示一级节点， "L2_${id}" 表示二级文件夹
-     * value: true=展开, false=折叠
-     */
-    private val expandedState = mutableMapOf<String, Boolean>()
-
-    init {
-        loadNotebook()
-        loadTree()
-    }
-
-    // ==================== 数据加载 ====================
-
-    private fun loadNotebook() {
-        viewModelScope.launch {
-            notebookRepository.getNotebookByIdFlow(notebookId).collect { notebook ->
-                _uiState.value = _uiState.value.copy(
-                    notebookTitle = notebook?.name ?: "",
-                    aboutDescription = notebook?.description ?: "",
-                    aboutCreatedAt = notebook?.createdAt ?: 0L,
-                    aboutUpdatedAt = notebook?.updatedAt ?: 0L,
-                    aboutCoverImageUri = notebook?.coverImageUri ?: ""
-                )
-            }
-        }
-    }
-
-    private fun loadTree() {
-        viewModelScope.launch {
-            treeNodeRepository.getAllNodesByNotebook(notebookId).collect { allNodes ->
-                val chapters = buildThreeLevelTree(allNodes)
-                val leafCount = countAllLeafRecords(chapters)
-                _uiState.value = _uiState.value.copy(
-                    chapters = chapters,
-                    isLoading = false,
-                    totalRecordCount = leafCount
-                )
-            }
-        }
-    }
-
-    /**
      * 从扁平节点列表构建固定三级树结构
      *
      * 映射规则：
@@ -132,51 +132,59 @@ class DirectoryViewModel(
      * - Level 2 Folder: parentId == level1.id && isLeaf == false
      * - Level 2 Leaf: parentId == level1.id && isLeaf == true
      * - Level 3: parentId == level2.id && isLeaf == true
+     *
+     * 使用 groupBy 一次遍历构建父子映射，避免 O(n²) 的重复 filter 扫描
      */
-    private fun buildThreeLevelTree(allNodes: List<TreeNodeEntity>): List<LevelOneChapter> {
+    private fun buildThreeLevelTree(
+        allNodes: List<TreeNodeEntity>,
+        expandedKeys: Set<String>
+    ): List<LevelOneChapter> {
+        // 一次遍历构建父节点 ID -> 子节点列表的映射
+        val childrenMap = allNodes.groupBy { it.parentId }
+
         // 1. 提取一级节点（parentId == null 且不是叶子）
         val level1Nodes = allNodes.filter { it.parentId == null && !it.isLeaf }.sortedBy { it.sortOrder }
 
         return level1Nodes.map { l1 ->
             // 2. 从一级节点的子节点中分离出二级 Folder 和二级 Leaf
-            val level2Candidates = allNodes.filter { it.parentId == l1.id }.sortedBy { it.sortOrder }
+            val level2Candidates = (childrenMap[l1.id] ?: emptyList()).sortedBy { it.sortOrder }
 
-                val children = level2Candidates.mapNotNull { node ->
-                    if (node.isLeaf) {
-                        // 二级叶子节点（记录）
-                        node.recordId?.let {
-                            LevelTwoNode.Leaf(
-                                id = it.toString(), // recordId（供导航用）
-                                treeNodeId = node.id.toString(), // treeNode id（供删除/重命名用）
-                                title = node.name
-                            )
-                        }
-                    } else {
-                        // 二级文件夹（子章节）
-                        val level3Records = allNodes
-                            .filter { it.parentId == node.id && it.isLeaf }
-                            .sortedBy { it.sortOrder }
-                            .mapNotNull {
-                                LevelThreeRecord(
-                                    id = it.recordId?.toString() ?: return@mapNotNull null,
-                                    treeNodeId = it.id.toString(),
-                                    title = it.name
-                                )
-                            }
-
-                        LevelTwoNode.Folder(
-                            id = node.id.toString(),
-                            title = node.name,
-                            isExpanded = expandedState["L2_${node.id}"] ?: false,
-                            records = level3Records
+            val children = level2Candidates.mapNotNull { node ->
+                if (node.isLeaf) {
+                    // 二级叶子节点（记录）
+                    node.recordId?.let {
+                        LevelTwoNode.Leaf(
+                            id = it.toString(), // recordId（供导航用）
+                            treeNodeId = node.id.toString(), // treeNode id（供删除/重命名用）
+                            title = node.name
                         )
                     }
+                } else {
+                    // 二级文件夹（子章节）
+                    val level3Records = (childrenMap[node.id] ?: emptyList())
+                        .filter { it.isLeaf }
+                        .sortedBy { it.sortOrder }
+                        .mapNotNull {
+                            LevelThreeRecord(
+                                id = it.recordId?.toString() ?: return@mapNotNull null,
+                                treeNodeId = it.id.toString(),
+                                title = it.name
+                            )
+                        }
+
+                    LevelTwoNode.Folder(
+                        id = node.id.toString(),
+                        title = node.name,
+                        isExpanded = expandedKeys.contains("L2_${node.id}"),
+                        records = level3Records
+                    )
                 }
+            }
 
             LevelOneChapter(
                 id = l1.id.toString(),
                 title = l1.name,
-                isExpanded = expandedState["L1_${l1.id}"] ?: false,
+                isExpanded = expandedKeys.contains("L1_${l1.id}"),
                 isFavorite = l1.isFavorite,
                 children = children
             )
@@ -203,14 +211,14 @@ class DirectoryViewModel(
      * 获取可用于添加节点的"一级章节"列表（供对话框联动下拉使用）
      */
     fun getLevelOneChapters(): List<Pair<String, String>> {
-        return _uiState.value.chapters.map { it.id to it.title }
+        return uiState.value.chapters.map { it.id to it.title }
     }
 
     /**
      * 获取所有一级章节的 ID 到 名称 的映射（不含自身，用于移动对话框排除自身）
      */
     fun getLevelOneChaptersExcludingSelf(selfId: String): List<Pair<String, String>> {
-        return _uiState.value.chapters
+        return uiState.value.chapters
             .filter { it.id != selfId }
             .map { it.id to it.title }
     }
@@ -220,7 +228,7 @@ class DirectoryViewModel(
      */
     fun getAllLevelTwoFolders(): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
-        for (chapter in _uiState.value.chapters) {
+        for (chapter in uiState.value.chapters) {
             for (child in chapter.children) {
                 if (child is LevelTwoNode.Folder) {
                     result.add(child.id to child.title)
@@ -237,7 +245,7 @@ class DirectoryViewModel(
      */
     fun getLevelOneChaptersWithFolders(): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
-        for (chapter in _uiState.value.chapters) {
+        for (chapter in uiState.value.chapters) {
             // 直接挂到一级章节下（作为二级叶子）
             result.add(chapter.id to "${chapter.title} (直接)")
             // 挂到该章节下的二级文件夹中（作为三级记录）
@@ -254,7 +262,7 @@ class DirectoryViewModel(
      * 获取可供二级文件夹移动的目标一级章节列表（排除自身当前所在章节）
      */
     fun getLevelOneChaptersForFolderMove(currentChapterId: String): List<Pair<String, String>> {
-        return _uiState.value.chapters
+        return uiState.value.chapters
             .filter { it.id != currentChapterId }
             .map { it.id to it.title }
     }
@@ -265,7 +273,7 @@ class DirectoryViewModel(
      */
     fun getLevelTwoFolders(): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
-        for (chapter in _uiState.value.chapters) {
+        for (chapter in uiState.value.chapters) {
             for (child in chapter.children) {
                 if (child is LevelTwoNode.Folder) {
                     result.add(child.id to "${chapter.title} > ${child.title}")
@@ -278,7 +286,7 @@ class DirectoryViewModel(
     // ==================== Tab 切换 ====================
 
     fun setSelectedTab(tab: Int) {
-        _uiState.value = _uiState.value.copy(selectedTabIndex = tab)
+        _selectedTabIndex.value = tab
     }
 
     // ==================== 展开/折叠 ====================
@@ -288,8 +296,8 @@ class DirectoryViewModel(
      */
     fun toggleLevelOne(nodeId: String) {
         val key = "L1_$nodeId"
-        expandedState[key] = !(expandedState[key] ?: false)
-        loadTree()
+        val current = _expandedKeys.value
+        _expandedKeys.value = if (key in current) current - key else current + key
     }
 
     /**
@@ -297,8 +305,8 @@ class DirectoryViewModel(
      */
     fun toggleLevelTwo(nodeId: String) {
         val key = "L2_$nodeId"
-        expandedState[key] = !(expandedState[key] ?: false)
-        loadTree()
+        val current = _expandedKeys.value
+        _expandedKeys.value = if (key in current) current - key else current + key
     }
 
     // ==================== 添加节点 ====================
@@ -324,7 +332,6 @@ class DirectoryViewModel(
         viewModelScope.launch {
             when (level) {
                 1 -> {
-                    // 创建一级章节（parentId = null, isLeaf = false）
                     treeNodeRepository.createNode(
                         notebookId = notebookId,
                         parentId = null,
@@ -335,7 +342,6 @@ class DirectoryViewModel(
                 2 -> {
                     val pId = parentId?.toLongOrNull()
                     if (isFolder) {
-                        // 创建二级文件夹
                         treeNodeRepository.createNode(
                             notebookId = notebookId,
                             parentId = pId,
@@ -343,7 +349,6 @@ class DirectoryViewModel(
                             isLeaf = false
                         )
                     } else {
-                        // 创建二级叶子记录
                         val recordId = recordRepository.createRecord(name)
                         val nodeId = treeNodeRepository.createNode(
                             notebookId = notebookId,
@@ -352,7 +357,6 @@ class DirectoryViewModel(
                             isLeaf = true,
                             recordId = recordId
                         )
-                        // 添加修改历史，包含文件路径
                         val path = treeNodeRepository.getNodePath(nodeId)
                         recordRepository.addModificationHistory(recordId, "创建记录：$path")
                     }
@@ -360,7 +364,6 @@ class DirectoryViewModel(
                 3 -> {
                     val pId = parentId?.toLongOrNull()
                     if (pId != null) {
-                        // 创建三级记录（挂到二级文件夹下）
                         val recordId = recordRepository.createRecord(name)
                         val nodeId = treeNodeRepository.createNode(
                             notebookId = notebookId,
@@ -369,33 +372,27 @@ class DirectoryViewModel(
                             isLeaf = true,
                             recordId = recordId
                         )
-                        // 添加修改历史，包含文件路径
                         val path = treeNodeRepository.getNodePath(nodeId)
                         recordRepository.addModificationHistory(recordId, "创建记录：$path")
                     }
                 }
             }
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI，无需手动 refresh
+            debounceUpdateNotebookTimestamp()
         }
     }
 
     // ==================== 删除节点（级联） ====================
 
-    /**
-     * 删除节点及其所有子节点，同时清理对应的 Record 表记录
-     */
     fun deleteNode(nodeId: String) {
         viewModelScope.launch {
             val id = nodeId.toLongOrNull() ?: return@launch
 
-            // 1. 收集所有需要删除的 recordId（包括自身和递归子节点）
             val recordIdsToDelete = mutableListOf<Long>()
 
-            // 先查自身
             val selfNode = treeNodeRepository.getNodeById(id)
             selfNode?.recordId?.let { recordIdsToDelete.add(it) }
 
-            // 递归收集子节点中的记录 ID
             suspend fun collectRecordIds(parentId: Long) {
                 val children = treeNodeRepository.getChildNodesOnce(parentId)
                 for (child in children) {
@@ -407,30 +404,24 @@ class DirectoryViewModel(
             }
             collectRecordIds(id)
 
-            // 2. 先删除 Record 表中的记录
             for (recordId in recordIdsToDelete.distinct()) {
                 recordRepository.deleteRecord(recordId)
             }
 
-            // 3. 再删除树节点（级联删除 tree_nodes）
             treeNodeRepository.deleteNodeCascade(id)
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
         }
     }
 
     // ==================== 重命名节点 ====================
 
-    /**
-     * 重命名节点，如果该节点是记录（有 recordId），同步更新 Record 表中的 title
-     */
     fun renameNode(nodeId: String, newName: String) {
         viewModelScope.launch {
             val id = nodeId.toLongOrNull() ?: return@launch
 
-            // 1. 先更新 tree_nodes.name
             treeNodeRepository.updateNodeName(id, newName)
 
-            // 2. 如果该节点绑定了 record，同步更新 records.title
             val node = treeNodeRepository.getNodeById(id)
             if (node?.recordId != null) {
                 val record = recordRepository.getRecordByIdOnce(node.recordId)
@@ -438,15 +429,13 @@ class DirectoryViewModel(
                     recordRepository.saveRecord(record.copy(title = newName))
                 }
             }
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
         }
     }
 
     // ==================== 更新目录描述 ====================
 
-    /**
-     * 更新目录描述，同时同步修改时间
-     */
     fun updateDescription(newDescription: String) {
         viewModelScope.launch {
             val notebook = notebookRepository.getNotebookById(notebookId) ?: return@launch
@@ -456,7 +445,7 @@ class DirectoryViewModel(
                     updatedAt = System.currentTimeMillis()
                 )
             )
-            loadNotebook()
+            // Room Flow 会自动通知 UI
         }
     }
 
@@ -466,64 +455,49 @@ class DirectoryViewModel(
     fun updateCoverImage(uri: String) {
         viewModelScope.launch {
             notebookRepository.updateCoverImage(notebookId, uri)
-            _uiState.value = _uiState.value.copy(aboutCoverImageUri = uri)
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
         }
     }
 
     // ==================== 更新 "最后修改" 时间 ====================
 
     /**
-     * 当目录内容发生任何变更时调用，刷新 notebook.updatedAt 时间戳
+     * 防抖方式更新 notebook.updatedAt 时间戳，500ms 内多次操作合并为一次写入
      */
-    private suspend fun updateNotebookTimestamp() {
-        val notebook = notebookRepository.getNotebookById(notebookId) ?: return
-        notebookRepository.updateNotebook(notebook.copy(updatedAt = System.currentTimeMillis()))
+    private fun debounceUpdateNotebookTimestamp() {
+        timestampJob?.cancel()
+        timestampJob = viewModelScope.launch {
+            delay(500)
+            val notebook = notebookRepository.getNotebookById(notebookId) ?: return@launch
+            notebookRepository.updateNotebook(notebook.copy(updatedAt = System.currentTimeMillis()))
+        }
     }
 
     // ==================== 收藏/取消收藏 ====================
 
-    /**
-     * 切换一级章节的收藏状态
-     * 点击星星图标时调用
-     */
     fun toggleFavorite(nodeId: String) {
         viewModelScope.launch {
             val id = nodeId.toLongOrNull() ?: return@launch
             val node = treeNodeRepository.getNodeById(id) ?: return@launch
             treeNodeRepository.updateFavoriteStatus(id, !node.isFavorite)
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
         }
     }
 
     // ==================== 移动节点 ====================
 
-    /**
-     * 移动节点到新的父节点下
-     *
-     * 规则说明：
-     * - 一级章节：不改变 parentId（保持为 null），仅重新排序（通过 moveNode 的 newParentId=null 实现放到末尾）
-     * - 二级叶子记录：可移动到一级章节下（成为二级叶子）或二级文件夹下（成为三级记录）
-     * - 二级文件夹：可移动到任意一级章节下（其内部子记录跟着走）
-     * - 三级记录：可移动到一级章节下（成为二级叶子）或二级文件夹下（成为三级记录）
-     *
-     * @param nodeId 要移动的节点 ID（treeNode id）
-     * @param newParentId 目标父节点 ID（null 表示移动到根节点/一级章节层级）
-     */
     fun moveNode(nodeId: String, newParentId: String?) {
         viewModelScope.launch {
             val id = nodeId.toLongOrNull() ?: return@launch
             val targetParentId = newParentId?.toLongOrNull()
 
-            // 移动前查询节点信息（用于记录修改历史）
             val node = treeNodeRepository.getNodeById(id)
 
-            // 执行移动
             treeNodeRepository.moveNode(id, targetParentId, notebookId)
 
-            // 如果该节点是叶子记录（有 recordId），在对应的 record 下追加修改历史
             if (node?.recordId != null) {
-                // 获取目标父节点名称
                 val targetName = if (targetParentId != null) {
                     treeNodeRepository.getNodeById(targetParentId)?.name ?: "未知"
                 } else {
@@ -534,41 +508,33 @@ class DirectoryViewModel(
                     "移动记录：${node.name} → ${targetName}"
                 )
             }
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
         }
     }
 
-    /**
-     * 移动一级章节到指定位置（同层级重排序，不改变 parentId）
-     *
-     * @param chapterId 要移动的一级章节 ID（treeNode id）
-     * @param targetIndex 目标位置索引（0-based），如 0=第一位
-     */
     fun moveChapterToPosition(chapterId: String, targetIndex: Int) {
         viewModelScope.launch {
-            val chapters = _uiState.value.chapters.toMutableList()
-            val currentIndex = chapters.indexOfFirst { it.id == chapterId }
+            // Read current chapters from the StateFlow value (safe in coroutine)
+            val localChapters = uiState.value.chapters.toMutableList()
+            val currentIndex = localChapters.indexOfFirst { it.id == chapterId }
             if (currentIndex == -1) return@launch
 
-            // 从原位置移除，插入到目标位置
-            val chapter = chapters.removeAt(currentIndex)
+            val chapterToMove = localChapters.removeAt(currentIndex)
             val adjustedIndex = if (currentIndex < targetIndex) targetIndex - 1 else targetIndex
-            chapters.add(adjustedIndex.coerceIn(0, chapters.size), chapter)
+            localChapters.add(adjustedIndex.coerceIn(0, localChapters.size), chapterToMove)
 
-            // 重新赋 sortOrder 并批量更新到数据库
-            chapters.forEachIndexed { index, ch ->
-                val id = ch.id.toLongOrNull() ?: return@forEachIndexed
-                treeNodeRepository.reorderNode(id, index)
+            localChapters.forEachIndexed { idx, ch ->
+                val nodeId = ch.id.toLongOrNull() ?: return@forEachIndexed
+                treeNodeRepository.reorderNode(nodeId, idx)
             }
-            updateNotebookTimestamp()
+            // Room Flow 会自动通知 UI
+            debounceUpdateNotebookTimestamp()
         }
     }
 
     // ==================== 导航 ====================
 
-    /**
-     * 点击记录节点时跳转
-     */
     fun onRecordClicked(recordId: String) {
         viewModelScope.launch {
             recordId.toLongOrNull()?.let { _navigateToRecord.emit(it) }

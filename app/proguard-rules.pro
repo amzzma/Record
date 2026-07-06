@@ -2,7 +2,7 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -dontwarn sun.misc.Unsafe
--keep class com.yutaca.record.model.** { *; }  # 将 model 换成你存放数据类的包名
+-keep class com.yutaca.record.data.entity.** { *; }  # 保留 Room Entity 数据类不被混淆（Gson 序列化用）
 -keep class * implements com.google.gson.TypeAdapterFactory
 -keep class * implements com.google.gson.JsonSerializer
 -keep class * implements com.google.gson.JsonDeserializer
